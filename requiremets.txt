@@ -1,0 +1,12 @@
+### install ###
+
+bunch
+pymongo
+blinker==1.2
+pyyaml
+
+### test ###
+
+nose
+ipdb
+
