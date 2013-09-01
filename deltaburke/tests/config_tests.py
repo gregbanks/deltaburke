@@ -1,4 +1,5 @@
 from copy import copy
+from functools import partial
 from unittest import TestCase
 
 from bunch import Bunch
@@ -147,9 +148,13 @@ class TestConfigManager(TestCase):
             pass
         mgr = ConfigManager()
         mgr.register_update_callback(callback)
-        self.assertTrue(bool(mgr._update_signal.receivers))
+        self.assertTrue(
+            bool(
+                mgr._update_signals[ConfigManager.DEFAULT_NAMESPACE].receivers))
         mgr.unregister_update_callback(callback)
-        self.assertFalse(bool(mgr._update_signal.receivers))
+        self.assertFalse(
+            bool(
+                mgr._update_signals[ConfigManager.DEFAULT_NAMESPACE].receivers))
 
     def test_signal_change(self):
         result = {}
@@ -159,4 +164,29 @@ class TestConfigManager(TestCase):
         mgr.register_update_callback(callback)
         mgr.load(self.configs[0])
         self.assertEqual(result['config'], self.configs[0])
+
+    def test_namespaces(self):
+        out = []
+        def callback_foo(out, config):
+            out.append('foo callback called')
+        def callback_bar(out, config):
+            out.append('bar callback called')
+        mgr = ConfigManager()
+        mgr.load(self.configs[0], namespace='foo')
+        cb_foo_partial = partial(callback_foo, out)
+        mgr.register_update_callback(cb_foo_partial, namespace='foo')
+        mgr.load(self.configs[1], namespace='bar')
+        cb_bar_partial = partial(callback_bar, out)
+        mgr.register_update_callback(cb_bar_partial, namespace='bar')
+        self.assertEqual(len(ConfigManager()._update_signals.keys()), 3)
+        with mgr.namespace('foo'):
+            mgr.load(self.configs[2])
+        self.assertIn('foo callback called', out)
+        self.assertNotIn('bar callback called', out)
+        self.assertEqual(mgr.get_config('foo'), self.configs[2])
+        self.assertEqual(mgr.get_config('bar'), self.configs[1])
+        with mgr.namespace('bar'):
+            mgr.unregister_update_callback(cb_bar_partial)
+        self.assertEqual(len(ConfigManager()._update_signals.keys()), 2)
+
 

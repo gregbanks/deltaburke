@@ -152,6 +152,8 @@ class Config(Bunch):
 
 
 class ConfigManager(object):
+    DEFAULT_NAMESPACE = 'default'
+
     _lock = threading.RLock()
 
     def __new__(cls, *args, **kwargs):
@@ -163,9 +165,19 @@ class ConfigManager(object):
 
     def __init__(self):
         if not self._initialized:
-            self._update_signal = blinker.signal('__deltaburke__')
-            self._config = None
+            self._configs = {}
             self._initialized = True
+            self._namespace = self.__class__.DEFAULT_NAMESPACE
+            self._signal_namespace = blinker.Namespace()
+            self._update_signals = {}
+            self._update_signals[self.__class__.DEFAULT_NAMESPACE] = \
+                self._signal_namespace.signal(
+                    self.__class__._update_signal_name(
+                        self.__class__.DEFAULT_NAMESPACE))
+
+    @staticmethod
+    def _update_signal_name(namespace):
+        return '__deltaburke__.%s' % (namespace)
 
     @property
     def lock(self):
@@ -174,10 +186,16 @@ class ConfigManager(object):
     @property
     @synchronized(_lock)
     def config(self):
-        return self._config
+        return self._configs.get(self._namespace, None)
 
     @synchronized(_lock)
-    def load(self, config_src, signal_update=True):
+    def get_config(self, namespace=None):
+        if namespace is None:
+            return self.config
+        return self._configs.get(namespace, None)
+
+    @synchronized(_lock)
+    def load(self, config_src, signal_update=True, namespace=None):
         """ Load config from source(s)
 
         :param config_src:  URI(s) or dictionaries to load the config from. If
@@ -188,20 +206,21 @@ class ConfigManager(object):
                             dictionaries
 
         """
+        namespace = self._namespace if namespace is None else namespace
         merge_configs = []
         if isinstance(config_src, list):
             merge_configs = config_src[1:]
             config_src = config_src[0]
         if isinstance(config_src, basestring):
             config_src = Loader.load(config_src)
-        self._config = Config(bunchify(config_src))
-        self.merge(merge_configs)
-        self._config._freeze()
+        self._configs[namespace] = Config(bunchify(config_src))
+        self.merge(merge_configs, namespace)
+        self._configs[namespace]._freeze()
         if signal_update:
-            self.signal_update()
+            self.signal_update(namespace)
 
     @synchronized(_lock)
-    def merge(self, config_src, signal_update=False):
+    def merge(self, config_src, signal_update=False, namespace=None):
         """ Merge configs
 
         :param config_src:  URI(s) or dictionaries to load config(s) from to
@@ -210,19 +229,20 @@ class ConfigManager(object):
                             dictionaries
 
         """
-        if self._config is None:
+        namespace = self._namespace if namespace is None else namespace
+        if self._configs.get(namespace, None) is None:
             raise ValueError('no config to merge with!')
         if not isinstance(config_src, list):
             config_src = [config_src]
         for config in config_src:
             if isinstance(config, basestring):
                 config = Loader.load(config)
-            self._config._merge(bunchify(config))
+            self._configs[namespace]._merge(bunchify(config))
         if signal_update:
-            self.signal_update()
+            self.signal_update(namespace)
 
     @synchronized(_lock)
-    def start_src_monitor(self, interval=60):
+    def start_src_monitor(self, interval=60, namespace=None):
         """ Monitor config sources for changes in a separate thread
 
         If a change occurs, then update the config and signal a change to those
@@ -231,7 +251,7 @@ class ConfigManager(object):
         raise NotImplementedError()
 
     @synchronized(_lock)
-    def stop_src_monitor(self):
+    def stop_src_monitor(self, namespace=None):
         """ Monitor config sources for changes in a separate thread
 
         If a change occurs, then update the config and signal a change to those
@@ -240,7 +260,7 @@ class ConfigManager(object):
         raise NotImplementedError()
 
     @synchronized(_lock)
-    def register_update_callback(self, callback):
+    def register_update_callback(self, callback, namespace=None):
         """ Register callback for updates
 
         :param callback: a function or method to be called when the config is
@@ -248,10 +268,15 @@ class ConfigManager(object):
         :type callback:  a function or mehod
 
         """
-        self._update_signal.connect(callback)
+        namespace = self._namespace if namespace is None else namespace
+        signal_name = self._update_signal_name(namespace)
+        if namespace not in self._update_signals:
+            self._update_signals[namespace] = \
+                self._signal_namespace.signal(signal_name)
+        self._update_signals[namespace].connect(callback)
 
     @synchronized(_lock)
-    def unregister_update_callback(self, callback):
+    def unregister_update_callback(self, callback, namespace=None):
         """ Unregister callback for updates
 
         :param callback: the function or method to unregister for config
@@ -259,9 +284,29 @@ class ConfigManager(object):
         :type callback: a function or method
 
         """
-        self._update_signal.disconnect(callback)
+        namespace = self._namespace if namespace is None else namespace
+        signal_name = self._update_signal_name(namespace)
+        if namespace not in self._update_signals:
+            return
+        self._update_signals[namespace].disconnect(callback)
+        if namespace != self.__class__.DEFAULT_NAMESPACE and \
+           not bool(self._update_signals[namespace].receivers):
+            del self._update_signals[namespace]
 
     @synchronized(_lock)
-    def signal_update(self):
-        self._update_signal.send(self._config)
+    def signal_update(self, namespace=None):
+        namespace = self._namespace if namespace is None else namespace
+        if namespace not in self._update_signals:
+            return
+        self._update_signals[namespace].send(self._configs[namespace])
+
+    @contextmanager
+    @synchronized(_lock)
+    def namespace(self, namespace):
+        previous_namespace = self._namespace
+        self._namespace = namespace
+        try:
+            yield
+        finally:
+            self._namespace = previous_namespace
 
