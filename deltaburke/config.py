@@ -214,7 +214,7 @@ class ConfigManager(object):
         if isinstance(config_src, basestring):
             config_src = Loader.load(config_src)
         self._configs[namespace] = Config(bunchify(config_src))
-        self.merge(merge_configs, namespace)
+        self.merge(merge_configs, False, namespace)
         self._configs[namespace]._freeze()
         if signal_update:
             self.signal_update(namespace)
