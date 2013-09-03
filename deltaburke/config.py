@@ -240,6 +240,14 @@ class ConfigManager(object):
             self._configs[namespace]._merge(bunchify(config))
         if signal_update:
             self.signal_update(namespace)
+    
+    @synchronized(_lock)
+    def delete(self, namespace=None):
+        namespace = self._namespace if namespace is None else namespace
+        try:
+            del self._configs[namespace]
+        except KeyError:
+            pass
 
     @synchronized(_lock)
     def start_src_monitor(self, interval=60, namespace=None):
@@ -309,4 +317,22 @@ class ConfigManager(object):
             yield
         finally:
             self._namespace = previous_namespace
+
+
+class CurrentConfigAttr(object):
+    _lock = threading.RLock()
+
+    def __init__(self, namespace=None):
+        self._namespace = namespace
+        self._config = ConfigManager().get_config(self._namespace)
+        ConfigManager().register_update_callback(self._update_config,
+                                                 self._namespace)
+
+    @synchronized(_lock)
+    def _update_config(self, config):
+        self._config = config
+
+    @synchronized(_lock)
+    def __get__(self, obj, type=None):
+        return self._config
 

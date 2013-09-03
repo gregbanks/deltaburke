@@ -4,7 +4,9 @@ from unittest import TestCase
 
 from bunch import Bunch
 
-from deltaburke.config import Config, ConfigManager, FrozenError
+from deltaburke.config import (
+    Config, ConfigManager, CurrentConfigAttr, FrozenError
+)
 
 
 class TestConfig(TestCase):
@@ -114,6 +116,22 @@ class TestConfig(TestCase):
         self.assertEqual(self.config.d.e.f, 2)
 
 
+class TestCurrentConfig(TestCase):
+    def setUp(self):
+        ConfigManager().delete()
+        class CurrentConfig(object):
+            config = CurrentConfigAttr()
+        self._current_config = CurrentConfig()
+
+    def test_current_config(self):
+        self.assertIsNone(self._current_config.config)
+        ConfigManager().load({'a': 'b', 'c': {'d': 'e'}})
+        self.assertEqual(self._current_config.config,
+                         {'a': 'b', 'c': {'d': 'e'}})
+        ConfigManager().merge({'c': {'f': 'g'}})
+        self.assertEqual(self._current_config.config,
+                         {'a': 'b', 'c': {'d': 'e', 'f': 'g'}})
+
 class TestConfigManager(TestCase):
     def setUp(self):
         self.configs = [
@@ -189,4 +207,4 @@ class TestConfigManager(TestCase):
             mgr.unregister_update_callback(cb_bar_partial)
         self.assertEqual(len(ConfigManager()._update_signals.keys()), 2)
 
-
+    
