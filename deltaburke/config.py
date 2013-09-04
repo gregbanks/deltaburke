@@ -8,6 +8,7 @@ import blinker
 from bunch import Bunch, bunchify
 
 from loader import Loader
+from monitor import SourceMonitor
 
 
 def synchronized(lock):
@@ -166,6 +167,7 @@ class ConfigManager(object):
     def __init__(self):
         if not self._initialized:
             self._configs = {}
+            self._monitors = {}
             self._initialized = True
             self._namespace = self.__class__.DEFAULT_NAMESPACE
             self._signal_namespace = blinker.Namespace()
@@ -194,8 +196,12 @@ class ConfigManager(object):
             return self.config
         return self._configs.get(namespace, None)
 
+    def _get_namespace(self, namespace):
+        return self._namespace if namespace is None else namespace
+
     @synchronized(_lock)
-    def load(self, config_src, signal_update=True, namespace=None):
+    def load(self, config_src, signal_update=True, namespace=None,
+                   monitor=False):
         """ Load config from source(s)
 
         :param config_src:  URI(s) or dictionaries to load the config from. If
@@ -206,12 +212,14 @@ class ConfigManager(object):
                             dictionaries
 
         """
-        namespace = self._namespace if namespace is None else namespace
+        namespace = self._get_namespace(namespace)
         merge_configs = []
         if isinstance(config_src, list):
             merge_configs = config_src[1:]
             config_src = config_src[0]
         if isinstance(config_src, basestring):
+            if monitor:
+                self.start_src_monitor(config_src)
             config_src = Loader.load(config_src)
         self._configs[namespace] = Config(bunchify(config_src))
         self.merge(merge_configs, False, namespace)
@@ -220,7 +228,8 @@ class ConfigManager(object):
             self.signal_update(namespace)
 
     @synchronized(_lock)
-    def merge(self, config_src, signal_update=False, namespace=None):
+    def merge(self, config_src, signal_update=False, namespace=None,
+                    monitor=False):
         """ Merge configs
 
         :param config_src:  URI(s) or dictionaries to load config(s) from to
@@ -229,43 +238,65 @@ class ConfigManager(object):
                             dictionaries
 
         """
-        namespace = self._namespace if namespace is None else namespace
+        namespace = self._get_namespace(namespace)
         if self._configs.get(namespace, None) is None:
             raise ValueError('no config to merge with!')
         if not isinstance(config_src, list):
             config_src = [config_src]
         for config in config_src:
             if isinstance(config, basestring):
+                if monitor:
+                    self.start_src_monitor(config)
                 config = Loader.load(config)
             self._configs[namespace]._merge(bunchify(config))
         if signal_update:
             self.signal_update(namespace)
-    
+
     @synchronized(_lock)
     def delete(self, namespace=None):
-        namespace = self._namespace if namespace is None else namespace
+        namespace = self._get_namespace(namespace)
         try:
             del self._configs[namespace]
         except KeyError:
             pass
+        try:
+            for src in self._monitors[namespace].keys():
+                self.stop_src_monitor(src)
+                del self._monitors[namespace][src]
+        except KeyError:
+            pass
 
     @synchronized(_lock)
-    def start_src_monitor(self, interval=60, namespace=None):
+    def start_src_monitor(self, src, interval=60, namespace=None):
         """ Monitor config sources for changes in a separate thread
 
         If a change occurs, then update the config and signal a change to those
         listening
         """
-        raise NotImplementedError()
+        namespace = self._get_namespace(namespace)
+        if namespace not in self._monitors:
+            self._monitors[namespace] = {}
+        if src not in self._monitors[namespace]:
+            data = Loader.load(src)
+            self._monitors[namespace][src] = \
+                    SourceMonitor.monitor(self, src, data, namespace, interval)
+            self._monitors[namespace][src].start()
 
     @synchronized(_lock)
-    def stop_src_monitor(self, namespace=None):
+    def stop_src_monitor(self, src, namespace=None):
         """ Monitor config sources for changes in a separate thread
 
         If a change occurs, then update the config and signal a change to those
         listening
         """
-        raise NotImplementedError()
+        namespace = self._get_namespace(namespace)
+        try:
+            self._monitors[namespace][src].stop()
+            del self._monitors[namespace][src]
+            if len(self._monitors[namespace].keys()) == 0:
+                del self._monitors[namespace]
+        except KeyError:
+            pass
 
     @synchronized(_lock)
     def register_update_callback(self, callback, namespace=None):
@@ -276,7 +307,7 @@ class ConfigManager(object):
         :type callback:  a function or mehod
 
         """
-        namespace = self._namespace if namespace is None else namespace
+        namespace = self._get_namespace(namespace)
         signal_name = self._update_signal_name(namespace)
         if namespace not in self._update_signals:
             self._update_signals[namespace] = \
@@ -292,7 +323,7 @@ class ConfigManager(object):
         :type callback: a function or method
 
         """
-        namespace = self._namespace if namespace is None else namespace
+        namespace = self._get_namespace(namespace)
         signal_name = self._update_signal_name(namespace)
         if namespace not in self._update_signals:
             return
@@ -303,7 +334,7 @@ class ConfigManager(object):
 
     @synchronized(_lock)
     def signal_update(self, namespace=None):
-        namespace = self._namespace if namespace is None else namespace
+        namespace = self._get_namespace(namespace)
         if namespace not in self._update_signals:
             return
         self._update_signals[namespace].send(self._configs[namespace])

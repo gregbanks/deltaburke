@@ -1,12 +1,15 @@
 ### install ###
 
 bunch
-pymongo
+pymongo>=2.5.2
 blinker==1.2
 pyyaml
+python-inotify==0.6-test
+git+https://github.com/gregbanks/maker-py@master#egg=maker_py-0.1.2
 
 ### test ###
 
-nose
 ipdb
+nose
+mock
 

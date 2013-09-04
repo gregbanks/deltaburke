@@ -1,5 +1,10 @@
+import os
+import threading
+
 from copy import copy
 from functools import partial
+from json import dumps
+from tempfile import mkstemp
 from unittest import TestCase
 
 from bunch import Bunch
@@ -207,4 +212,48 @@ class TestConfigManager(TestCase):
             mgr.unregister_update_callback(cb_bar_partial)
         self.assertEqual(len(ConfigManager()._update_signals.keys()), 2)
 
-    
+    def test_monitor(self):
+        fd, path = mkstemp()
+        try:
+            config = open(path, 'w')
+            config.write(dumps({'a': 'b', 'c': {'d': 'e'}}))
+            config.close()
+
+            mgr = ConfigManager()
+            mgr.load('file://%s' % (path), False, None, True)
+
+            call_args = []
+            callback_event = threading.Event()
+            def callback(*args, **kwargs):
+                call_args.append((args, kwargs))
+                callback_event.set()
+
+            mgr.register_update_callback(callback)
+
+            self.assertEqual(mgr.config, {'a': 'b', 'c': {'d': 'e'}})
+
+            config = open(path, 'w')
+            config.write(dumps({'a': 'b', 'c': {'d': 'f'}}))
+            config.close()
+
+            callback_event.wait(3)
+            self.assertEqual(len(call_args), 1)
+            self.assertEqual(mgr.config, {'a': 'b', 'c': {'d': 'f'}})
+            callback_event.clear()
+
+            config = open(path, 'w')
+            config.write(dumps({'a': 'b', 'c': {'g': 'h'}}))
+            config.close()
+
+            callback_event.wait(3)
+            self.assertEqual(len(call_args), 2)
+            self.assertEqual(mgr.config, {'a': 'b', 'c': {'d': 'f', 'g': 'h'}})
+            callback_event.clear()
+
+            mgr.delete()
+
+            self.assertEqual(len(mgr._monitors.keys()), 0)
+        finally:
+            os.unlink(path)
+
+
