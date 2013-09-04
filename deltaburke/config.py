@@ -1,3 +1,4 @@
+import copy
 import threading
 
 from contextlib import contextmanager
@@ -124,7 +125,6 @@ class Config(Bunch):
         Config._moon_walk(self, _freeze_node)
         self._frozen = True
 
-
     def _thaw(self):
         """ Make Config mutable
 
@@ -136,6 +136,19 @@ class Config(Bunch):
                 parent[keys[-1]] = Bunch(val)
         self.__dict__['_frozen'] = False
         Config._walk(self, _thaw_node)
+
+    def mutable_clone(self, node=None, clone=None):
+        if node is None:
+            node = self
+        if clone is None:
+            clone = Bunch()
+        for k, v in node.iteritems():
+            if isinstance(v, dict):
+                clone[k] = Bunch()
+                self.mutable_clone(v, clone[k])
+            else:
+                clone[k] = copy.copy(v)
+        return clone
 
     @contextmanager
     def _handle(self):

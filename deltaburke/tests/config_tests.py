@@ -120,6 +120,14 @@ class TestConfig(TestCase):
         self.assertIsInstance(error, FrozenError)
         self.assertEqual(self.config.d.e.f, 2)
 
+    def test_mutable_clone(self):
+        self.config._freeze()
+        self.assertRaises(FrozenError, setattr, self.config, 'a', 3)
+        clone = self.config.mutable_clone()
+        self.assertEqual(self.config, clone)
+        clone.a = 3
+        self.assertEqual(clone.a, 3)
+
 
 class TestCurrentConfig(TestCase):
     def setUp(self):
