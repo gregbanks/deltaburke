@@ -416,10 +416,4 @@ class CurrentConfigAttr(object):
         return self._config
 
 
-class CurrentConfig(dict):
-    def __init__(self, sources, namespace=None):
-        self._namespace = namespace
-        self._config_manager
-
-
 
