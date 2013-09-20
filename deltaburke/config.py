@@ -36,6 +36,13 @@ class Frozen(Bunch):
     def __setitem__(self, k, v):
         raise FrozenError()
 
+    def __deepcopy__(self, memo):
+        new = Bunch()
+        memo[id(self)] = new
+        for k, v in self.iteritems():
+            setattr(new, k, copy.deepcopy(v, memo))
+        return new
+
 
 class Config(Bunch):
     def __init__(self, *args, **kwargs):
@@ -54,6 +61,13 @@ class Config(Bunch):
         if self._frozen:
             raise FrozenError()
         super(Config, self).__setitem__(k, v)
+
+    def __deepcopy__(self, memo):
+        new = Bunch()
+        memo[id(self)] = new
+        for k, v in self.iteritems():
+            setattr(new, k, copy.deepcopy(v, memo))
+        return new
 
     @classmethod
     def _traverse(cls, direction, config, callback, keys=None):

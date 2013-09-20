@@ -1,7 +1,7 @@
 import os
 import threading
 
-from copy import copy
+from copy import copy, deepcopy
 from functools import partial
 from json import dumps
 from tempfile import mkstemp
@@ -127,6 +127,11 @@ class TestConfig(TestCase):
         self.assertEqual(self.config, clone)
         clone.a = 3
         self.assertEqual(clone.a, 3)
+
+    def test_deepcopy(self):
+        self.config._freeze()
+        clone = deepcopy(self.config)
+        self.assertEqual(self.config, clone)
 
 
 class TestCurrentConfigAttr(TestCase):
