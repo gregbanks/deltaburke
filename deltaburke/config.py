@@ -128,7 +128,11 @@ class Config(Bunch):
 
         if sub_key in self.keys():
             with self._handle():
-                __do_subs(self, self[sub_key])
+                subs = self.pop(sub_key)
+                try:
+                    __do_subs(self, subs)
+                finally:
+                    self[sub_key] = subs
 
     def _freeze(self):
         """ Make Config immutable
