@@ -129,7 +129,7 @@ class TestConfig(TestCase):
         self.assertEqual(clone.a, 3)
 
 
-class TestCurrentConfig(TestCase):
+class TestCurrentConfigAttr(TestCase):
     def setUp(self):
         ConfigManager().delete()
         class CurrentConfig(object):
@@ -144,6 +144,7 @@ class TestCurrentConfig(TestCase):
         ConfigManager().merge({'c': {'f': 'g'}})
         self.assertEqual(self._current_config.config,
                          {'a': 'b', 'c': {'d': 'e', 'f': 'g'}})
+
 
 class TestConfigManager(TestCase):
     def setUp(self):
@@ -264,4 +265,24 @@ class TestConfigManager(TestCase):
         finally:
             os.unlink(path)
 
+    def test_string_substitutions(self):
+        source = {
+            '_subs': {'foo': 'bar',
+                      'alice': 'bob',
+                      'dead': 'beef'},
+            'a': {'b': '${alice} in wonderland'},
+            'c': 'dive ${foo}',
+            'd': ['where\'s', 'the', '${dead}']}
+
+        mgr = ConfigManager()
+        mgr.load(source, False, sub_key='_subs')
+
+        self.assertEqual(mgr.config.a.b, 'bob in wonderland')
+        self.assertEqual(mgr.config.c, 'dive bar')
+        self.assertEqual(mgr.config.d,
+                         ['where\'s', 'the', 'beef'])
+
+        mgr.merge({'a': {'e': '${foo}'}})
+
+        self.assertEqual(mgr.config.a, {'b': 'bob in wonderland', 'e': 'bar'})
 

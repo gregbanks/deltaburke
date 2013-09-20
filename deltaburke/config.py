@@ -3,6 +3,7 @@ import threading
 
 from contextlib import contextmanager
 from functools import wraps
+from string import Template
 
 import blinker
 
@@ -111,6 +112,24 @@ class Config(Bunch):
         with self._handle():
             Config._walk(other, _merge_node)
 
+    def _do_subs(self, sub_key):
+        def __do_subs(node, subs):
+            if isinstance(node, dict):
+                for k in node.keys():
+                    if node == self and k == sub_key:
+                        continue
+                    node[k] = __do_subs(node[k], subs)
+            elif isinstance(node, list):
+                for i in xrange(len(node)):
+                    node[i] = __do_subs(node[i], subs)
+            elif isinstance(node, basestring):
+                node = Template(node).substitute(**subs)
+            return node
+
+        if sub_key in self.keys():
+            with self._handle():
+                __do_subs(self, self[sub_key])
+
     def _freeze(self):
         """ Make Config immutable
 
@@ -180,6 +199,7 @@ class ConfigManager(object):
     def __init__(self):
         if not self._initialized:
             self._configs = {}
+            self._sub_keys = {}
             self._monitors = {}
             self._initialized = True
             self._namespace = self.__class__.DEFAULT_NAMESPACE
@@ -212,9 +232,12 @@ class ConfigManager(object):
     def _get_namespace(self, namespace):
         return self._namespace if namespace is None else namespace
 
+    def _do_subs(self, namespace):
+        self._configs[namespace]._do_subs(self._sub_keys[namespace])
+
     @synchronized(_lock)
     def load(self, config_src, signal_update=True, namespace=None,
-                   monitor=False):
+                   monitor=False, sub_key=None):
         """ Load config from source(s)
 
         :param config_src:  URI(s) or dictionaries to load the config from. If
@@ -235,14 +258,16 @@ class ConfigManager(object):
                 self.start_src_monitor(config_src)
             config_src = Loader.load(config_src)
         self._configs[namespace] = Config(bunchify(config_src))
-        self.merge(merge_configs, False, namespace)
+        self.merge(merge_configs, False, namespace, monitor, False)
+        self._sub_keys[namespace] = sub_key
+        self._do_subs(namespace)
         self._configs[namespace]._freeze()
         if signal_update:
             self.signal_update(namespace)
 
     @synchronized(_lock)
     def merge(self, config_src, signal_update=False, namespace=None,
-                    monitor=False):
+                    monitor=False, do_subs=True):
         """ Merge configs
 
         :param config_src:  URI(s) or dictionaries to load config(s) from to
@@ -262,6 +287,8 @@ class ConfigManager(object):
                     self.start_src_monitor(config)
                 config = Loader.load(config)
             self._configs[namespace]._merge(bunchify(config))
+            if do_subs:
+                self._do_subs(namespace)
         if signal_update:
             self.signal_update(namespace)
 
@@ -276,6 +303,10 @@ class ConfigManager(object):
             for src in self._monitors[namespace].keys():
                 self.stop_src_monitor(src)
                 del self._monitors[namespace][src]
+        except KeyError:
+            pass
+        try:
+            del self._sub_keys[namespace]
         except KeyError:
             pass
 
@@ -379,4 +410,12 @@ class CurrentConfigAttr(object):
     @synchronized(_lock)
     def __get__(self, obj, type=None):
         return self._config
+
+
+class CurrentConfig(dict):
+    def __init__(self, sources, namespace=None):
+        self._namespace = namespace
+        self._config_manager
+
+
 
