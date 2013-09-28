@@ -83,6 +83,7 @@ class FileSourceMonitor(SourceMonitor):
                                                 namespace, poll_interval)
         assert(source.startswith('file://'))
         self._watcher = file_watcher.Watcher()
+        self._source = source
         self._watcher.add(urlparse.urlparse(source).path,
                           IN_CLOSE_WRITE)
 
@@ -103,6 +104,10 @@ class FileSourceMonitor(SourceMonitor):
                 except Exception:
                     import traceback
                     traceback.print_exc()
+                finally:
+                    self._watcher.read()
+                    self._watcher.add(urlparse.urlparse(self._source).path,
+                                      IN_CLOSE_WRITE)
 
 
 class MongoSourceMonitor(SourceMonitor):
