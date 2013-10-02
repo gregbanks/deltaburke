@@ -1,6 +1,7 @@
-from unittest import TestCase
+from unittest import SkipTest, TestCase
 
 from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure
 
 from deltaburke.loader import Loader, ConfigNotFoundError
 
@@ -9,7 +10,10 @@ class TestMongoLoader(TestCase):
     TEST_DB = 'deltaburke_test'
 
     def setUp(self):
-        client = MongoClient()
+        try:
+            client = MongoClient()
+        except ConnectionFailure:
+            raise SkipTest('mongo is not running. skipping test...')
         client.drop_database(self.__class__.TEST_DB)
         self.db = client[self.__class__.TEST_DB]
         self.db.foo.insert([{'_id': 1,

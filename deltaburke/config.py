@@ -219,6 +219,7 @@ class ConfigManager(object):
             self._configs = {}
             self._sub_keys = {}
             self._monitors = {}
+            self._monitor_interval = 60
             self._initialized = True
             self._namespace = self.__class__.DEFAULT_NAMESPACE
             self._signal_namespace = blinker.Namespace()
@@ -246,6 +247,16 @@ class ConfigManager(object):
         if namespace is None:
             return self.config
         return self._configs.get(namespace, None)
+
+    @property
+    @synchronized(_lock)
+    def monitor_interval(self):
+        return self._monitor_interval
+
+    @monitor_interval.setter
+    @synchronized(_lock)
+    def monitor_interval(self, interval):
+        self._monitor_interval = interval
 
     def _get_namespace(self, namespace):
         return self._namespace if namespace is None else namespace
@@ -329,13 +340,14 @@ class ConfigManager(object):
             pass
 
     @synchronized(_lock)
-    def start_src_monitor(self, src, interval=60, namespace=None):
+    def start_src_monitor(self, src, interval=None, namespace=None):
         """ Monitor config sources for changes in a separate thread
 
         If a change occurs, then update the config and signal a change to those
         listening
         """
         namespace = self._get_namespace(namespace)
+        interval = self._monitor_interval if interval is None else interval
         if namespace not in self._monitors:
             self._monitors[namespace] = {}
         if src not in self._monitors[namespace]:

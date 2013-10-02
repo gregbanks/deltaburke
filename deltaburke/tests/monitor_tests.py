@@ -37,7 +37,8 @@ class TestThreadingSourceMonitor(TestSourceMonitor):
     def test_stop(self):
         monitor = FileSourceMonitor(self._config_manager,
                                     'file:///%s' % (self._path),
-                                    SourceMonitor.hash(self._data))
+                                    SourceMonitor.hash(self._data),
+                                    poll_interval=.1)
         self.assertFalse(monitor.is_alive())
         monitor.start()
         self.assertTrue(monitor.is_alive())
@@ -49,7 +50,8 @@ class TestFileSourceMonitor(TestSourceMonitor):
     def test_file_change(self):
         monitor = FileSourceMonitor(self._config_manager,
                                     'file:///%s' % (self._path),
-                                    SourceMonitor.hash(self._data))
+                                    SourceMonitor.hash(self._data),
+                                    poll_interval=.2)
         monitor.start()
         try:
             config = open(self._path, 'w')

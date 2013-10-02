@@ -20,6 +20,7 @@ class TestConfig(TestCase):
                               'b': 2,
                               'c': [1, 2, 3, {'z': 1}],
                               'd': {'e': {'f': 1}}})
+        ConfigManager().monitor_interval = .1
 
     def test_walk(self):
         expected_callback_args = \

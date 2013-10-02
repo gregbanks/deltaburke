@@ -1,18 +1,23 @@
 import hashlib
 import select
 import threading
+import time
 import urlparse
 
 from abc import ABCMeta, abstractmethod
 from functools import partial
 from json import dumps
 
-import inotify.watcher as file_watcher
-
-from inotify import IN_CLOSE_WRITE
 from robustify.robustify import retry_till_done
 
 from loader import Loader
+
+try:
+    import inotify.watcher as file_watcher
+
+    from inotify import IN_CLOSE_WRITE
+except ImportError:
+    pass
 
 POLL_INTERVAL = 60
 
@@ -82,32 +87,51 @@ class FileSourceMonitor(SourceMonitor):
         super(FileSourceMonitor, self).__init__(manager, source, hash_,
                                                 namespace, poll_interval)
         assert(source.startswith('file://'))
-        self._watcher = file_watcher.Watcher()
         self._source = source
-        self._watcher.add(urlparse.urlparse(source).path,
-                          IN_CLOSE_WRITE)
 
-    def monitor(self):
+        if 'file_watcher' in globals():
+            self._watcher = file_watcher.Watcher()
+            self._watcher.add(urlparse.urlparse(source).path,
+                              IN_CLOSE_WRITE)
+        else:
+            self._poll_interval = poll_interval
+
+    def _check(self):
+        try:
+            data = retry_till_done(partial(Loader.load, self._source),
+                                   max_wait_in_secs=2,
+                                   retry_interval=.3)
+            hash_ = self.hash(data)
+            if hash_ != self._hash:
+                self._hash = hash_
+                self._manager.merge(data, True, self._namespace)
+        except ValueError:
+            raise
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+    def _monitor_inotify(self):
         while not self._stop.is_set():
             rlist, _, _ = select.select([self._watcher.fileno()], [], [], 1)
             if self._watcher.fileno() in rlist:
                 try:
-                    data = retry_till_done(partial(Loader.load, self._source),
-                                           max_wait_in_secs=2, 
-                                           retry_interval=.2)
-                    hash_ = self.hash(data)
-                    if hash_ != self._hash:
-                        self._hash = hash_
-                        self._manager.merge(data, True, self._namespace)
-                except ValueError:
-                    raise
-                except Exception:
-                    import traceback
-                    traceback.print_exc()
+                    self._check()
                 finally:
                     self._watcher.read()
                     self._watcher.add(urlparse.urlparse(self._source).path,
                                       IN_CLOSE_WRITE)
+
+    def _monitor_poll(self):
+        while not self._stop.is_set():
+            self._check()
+            time.sleep(self._poll_interval)
+
+    def monitor(self):
+        if 'file_watcher' in globals():
+            self._monitor_inotify()
+        else:
+            self._monitor_poll()
 
 
 class MongoSourceMonitor(SourceMonitor):
