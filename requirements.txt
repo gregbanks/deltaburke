@@ -4,7 +4,7 @@ bunch
 pymongo>=2.5.2
 blinker==1.2
 pyyaml
-https://github.com/gregbanks/maker-py/archive/v0.1.3.zip#egg=makerpy
+https://github.com/gregbanks/maker-py/archive/v0.1.3.zip#egg=maker_py-v0.1.3
 
 # NOTE: this should be last in line for install reqs
 # python-inotify==0.6-test
